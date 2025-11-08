@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Library Test</title>
+    <script src="paho-mqtt.min.js"></script>
+</head>
+<body>
+    <h1>Paho MQTT Library Test</h1>
+    <div id="result"></div>
+    
+    <script>
+        const resultDiv = document.getElementById('result');
+        
+        setTimeout(() => {
+            let html = '<h2>Debug Info:</h2>';
+            html += '<p><strong>typeof Paho:</strong> ' + typeof Paho + '</p>';
+            
+            if (typeof Paho !== 'undefined') {
+                html += '<p><strong>typeof Paho.MQTT:</strong> ' + typeof Paho.MQTT + '</p>';
+                html += '<p><strong>typeof Paho.Client:</strong> ' + typeof Paho.Client + '</p>';
+                html += '<p><strong>typeof Paho.Message:</strong> ' + typeof Paho.Message + '</p>';
+                
+                if (typeof Paho.Client !== 'undefined') {
+                    html += '<p style="color: green; font-size: 24px;">✓ Library loaded successfully!</p>';
+                    html += '<p><strong>Structure:</strong> Use Paho.Client (not Paho.MQTT.Client)</p>';
+                } else if (typeof Paho.MQTT !== 'undefined' && typeof Paho.MQTT.Client !== 'undefined') {
+                    html += '<p style="color: green; font-size: 24px;">✓ Library loaded successfully!</p>';
+                    html += '<p><strong>Structure:</strong> Use Paho.MQTT.Client</p>';
+                } else {
+                    html += '<p style="color: red;">✗ Neither Paho.Client nor Paho.MQTT.Client found</p>';
+                }
+            } else {
+                html += '<p style="color: red;">✗ Paho is undefined</p>';
+                html += '<p>Check browser console for errors</p>';
+            }
+            
+            resultDiv.innerHTML = html;
+        }, 500);
+    </script>
+</body>
+</html>

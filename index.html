@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Fleet Navigation UI</title>
+    
+    <!-- Using local copy of Paho MQTT library (no internet required) -->
+    <script src="paho-mqtt.min.js"></script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        select, input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 10px;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .status-connecting {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-sent {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Robot Fleet Navigation</h1>
+        
+        <div class="form-group">
+            <label for="robotSelect">Select Robot:</label>
+            <select id="robotSelect">
+                <option value="SmallDeliveryRobot_0">SmallDeliveryRobot_0</option>
+                <option value="SmallDeliveryRobot_1">SmallDeliveryRobot_1</option>
+                <option value="SmallDeliveryRobot_2">SmallDeliveryRobot_2</option>
+                <option value="SmallDeliveryRobot_3">SmallDeliveryRobot_3</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="xCoord">X Coordinate:</label>
+            <input type="number" id="xCoord" placeholder="Enter X coordinate" step="0.1">
+        </div>
+        
+        <div class="form-group">
+            <label for="yCoord">Y Coordinate:</label>
+            <input type="number" id="yCoord" placeholder="Enter Y coordinate" step="0.1">
+        </div>
+        
+        <button id="sendButton" onclick="sendGoal()" disabled>Send Goal</button>
+        
+        <p id="status" class="status-connecting">Connecting...</p>
+    </div>
+
+    <script>
+        // Check if Paho MQTT library loaded successfully
+        window.addEventListener('DOMContentLoaded', function() {
+            if (typeof Paho === 'undefined' || typeof Paho.Client === 'undefined') {
+                updateStatus("ERROR: MQTT library failed to load. Use web server (./start_server.sh)", "error");
+                console.error("Paho MQTT library not loaded!");
+                console.error("Open with: http://localhost:8000/index.html (not file://)");
+                return;
+            }
+            console.log("Paho MQTT library loaded successfully");
+            initializeMQTT();
+        });
+        
+        // MQTT Client Configuration
+        const brokerHost = "test.mosquitto.org";
+        const brokerPort = 8081;  // WebSocket Secure port
+        const brokerPath = "/mqtt";  // WebSocket path
+        const topic = "fleet/commands/navigate";
+        
+        // Generate a unique client ID
+        const clientId = "robotFleetUI_" + Math.random().toString(16).substr(2, 8);
+        
+        // Global variables
+        let client = null;
+        
+        // Get DOM elements
+        const statusElement = document.getElementById("status");
+        const sendButton = document.getElementById("sendButton");
+        
+        function initializeMQTT() {
+            // Create MQTT client instance (with WebSocket path)
+            client = new Paho.Client(brokerHost, brokerPort, brokerPath, clientId);
+            
+            // Set up connection lost callback
+            client.onConnectionLost = function(responseObject) {
+                if (responseObject.errorCode !== 0) {
+                    console.error("Connection lost:", responseObject.errorMessage);
+                    updateStatus("Connection lost: " + responseObject.errorMessage, "error");
+                    sendButton.disabled = true;
+                }
+            };
+            
+            // Set up message arrived callback (if needed for future features)
+            client.onMessageArrived = function(message) {
+                console.log("Message arrived:", message.payloadString);
+            };
+            
+            // Connection options using secure WebSocket
+            const connectOptions = {
+                useSSL: true,  // Use secure WebSocket (wss://)
+                timeout: 10,   // Connection timeout in seconds
+                keepAliveInterval: 30,  // Keep-alive ping interval
+                onSuccess: function() {
+                    console.log("Connected to MQTT broker");
+                    updateStatus("Connected", "connected");
+                    sendButton.disabled = false;
+                },
+                onFailure: function(error) {
+                    console.error("Connection failed:", error);
+                    console.error("Error code:", error.errorCode);
+                    console.error("Error message:", error.errorMessage);
+                    updateStatus("Connection failed: " + error.errorMessage, "error");
+                    sendButton.disabled = true;
+                    
+                    // Log full connection details for debugging
+                    console.log("Tried to connect to: wss://" + brokerHost + ":" + brokerPort + brokerPath);
+                }
+            };
+            
+            // Connect to the broker
+            console.log("Attempting to connect to MQTT broker...");
+            console.log("Broker: wss://" + brokerHost + ":" + brokerPort + brokerPath);
+            console.log("Client ID:", clientId);
+            
+            try {
+                client.connect(connectOptions);
+            } catch (error) {
+                console.error("Exception during connection:", error);
+                updateStatus("Connection error: " + error.message, "error");
+            }
+        }
+        
+        /**
+         * Updates the status message and applies appropriate styling
+         */
+        function updateStatus(message, type) {
+            statusElement.textContent = message;
+            statusElement.className = "";
+            
+            switch(type) {
+                case "connected":
+                    statusElement.classList.add("status-connected");
+                    break;
+                case "error":
+                    statusElement.classList.add("status-error");
+                    break;
+                case "sent":
+                    statusElement.classList.add("status-sent");
+                    break;
+                default:
+                    statusElement.classList.add("status-connecting");
+            }
+        }
+        
+        /**
+         * Sends navigation goal to the selected robot via MQTT
+         */
+        function sendGoal() {
+            // Get values from form inputs
+            const robotId = document.getElementById("robotSelect").value;
+            const xCoord = parseFloat(document.getElementById("xCoord").value);
+            const yCoord = parseFloat(document.getElementById("yCoord").value);
+            
+            // Validate inputs
+            if (isNaN(xCoord) || isNaN(yCoord)) {
+                updateStatus("Error: Please enter valid X and Y coordinates", "error");
+                return;
+            }
+            
+            // Create the command payload
+            const command = {
+                robot_id: robotId,
+                goal: {
+                    x: xCoord,
+                    y: yCoord
+                }
+            };
+            
+            // Convert to JSON string
+            const payloadString = JSON.stringify(command);
+            
+            // Create MQTT message
+            const message = new Paho.Message(payloadString);
+            message.destinationName = topic;
+            
+            try {
+                // Publish the message
+                client.send(message);
+                console.log("Sent command:", payloadString);
+                updateStatus(`Goal sent to ${robotId} (${xCoord}, ${yCoord})`, "sent");
+            } catch (error) {
+                console.error("Failed to send message:", error);
+                updateStatus("Error: Failed to send command", "error");
+            }
+        }
+    </script>
+</body>
+</html>
